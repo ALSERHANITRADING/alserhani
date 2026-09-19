@@ -12,8 +12,9 @@ def run_web():
     app.run(host="0.0.0.0", port=port)
 
 threading.Thread(target=run_web, daemon=True).start()
-import os
-import google.generativeai as genai
+
+from google import genai
+from google.genai import types
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -29,16 +30,16 @@ def get_model():
             continue
         try:
             key = key.strip()
-            genai.configure(api_key=key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            client = genai.Client(api_key=key)
+            client.models.generate_content(model='gemini-2.0-flash', contents='hi')
             print(f"تم تجربة مفتاح يبدأ بـ {key[:4]}... نجح")
-            return model
+            return client
         except Exception as e:
             print(f"فشل المفتاح {key[:4]}: {e}")
             continue
     return None
 
-model = get_model()
+client = get_model()
 
 SYSTEM_PROMPT = """
 انت خبير MALAYSIAN SNR EMPEROR.
@@ -90,15 +91,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in allowed_users:
         await update.message.reply_text("🔒 هذا بوت خاص. أرسل /start وأدخل رمز الدخول.")
         return
-    if not model:
+    if not client:
         await update.message.reply_text("❌ خطأ في مفتاح API. تأكد من GEMINI_API_KEY في Render")
         return
     await update.message.reply_text("تم الاستلام، جاري تحليل MALAYSIAN SNR... ⏳")
     photo_file = await update.message.photo[-1].get_file()
     await photo_file.download_to_drive("chart.jpg")
     try:
-        f = genai.upload_file(path="chart.jpg")
-        res = model.generate_content([SYSTEM_PROMPT, f])
+        f = client.files.upload(file="chart.jpg")
+        res = client.models.generate_content(model="gemini-2.0-flash", contents=[SYSTEM_PROMPT, f])
         await update.message.reply_text(res.text)
     except Exception as e:
         await update.message.reply_text(f"خطأ في التحليل: {e}")
@@ -108,7 +109,7 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in allowed_users:
         await update.message.reply_text("🔒 هذا بوت خاص. أرسل /start")
         return
-    if not model:
+    if not client:
         await update.message.reply_text("❌ خطأ في مفتاح API")
         return
     
@@ -117,11 +118,11 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         doc_file = await update.message.document.get_file()
         await doc_file.download_to_drive("book.pdf")
         
-        uploaded_file = genai.upload_file(path="book.pdf")
+        uploaded_file = client.files.upload(file="book.pdf")
         
         prompt = SYSTEM_PROMPT + "\n\nهذا ملف PDF لكتاب Malaysian SNR Emperor. حلله وطبق كل قواعده (Fresh SNR, Storyline MRM/WRW/DRD, Engulfing, Trendline, Setups) وبعدها لما يبعتلك شارتات حلل على اساسه."
         
-        res = model.generate_content([prompt, uploaded_file])
+        res = client.models.generate_content(model="gemini-2.0-flash", contents=[prompt, uploaded_file])
         await update.message.reply_text(res.text)
     except Exception as e:
         await update.message.reply_text(f"خطأ في قراءة PDF: {e}")
@@ -130,7 +131,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf)) # هذا السطر الجديد اللي يوافق على PDF
+    app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
     app.run_polling()
 
