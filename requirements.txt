@@ -1,4 +1,6 @@
-    python-telegram-bot
-       google-genai
-    PyPDF2
-flask
+python-telegram-bot==20.7
+google-genai
+PyMuPDF
+Pillow
+python-dotenv
+Flask
