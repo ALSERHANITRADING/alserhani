@@ -19,7 +19,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_KEY")
 GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_BACKUP")
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "LIBYA1288")
 
