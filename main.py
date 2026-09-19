@@ -1,0 +1,102 @@
+import os
+import google.generativeai as genai
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+# يقبل أي مفتاح سواء يبدأ بـ AIza أو AQ
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_BACKUP") # مفتاح احتياطي
+BOT_PASSWORD = os.getenv("BOT_PASSWORD", "LIBYA1288")
+
+# دالة ذكية لتجربة المفاتيح
+def get_model():
+    keys_to_try = [GEMINI_API_KEY, GEMINI_API_KEY_2]
+    for key in keys_to_try:
+        if not key:
+            continue
+        try:
+            key = key.strip() # يمسح أي مسافات
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            # تجربة سريعة
+            print(f"تم تجربة مفتاح يبدأ بـ {key[:4]}... نجح")
+            return model
+        except Exception as e:
+            print(f"فشل المفتاح {key[:4]}: {e}")
+            continue
+    return None
+
+model = get_model()
+
+SYSTEM_PROMPT = """
+انت خبير MALAYSIAN SNR EMPEROR.
+لديك 6 شارتات: 1د, 5د, 15د, 1س, 4س, يومي.
+القواعد:
+1. استخرج الزوج والسعر الحالي من الصور نفسها. لا تستخدم ارقام ثابتة.
+2. الرد بالعربية الفصحى فقط.
+3. وقف الخسارة 10-15 نقطة فقط، والاهداف: TP1 ضعف الستوب، TP2 ثلاثة اضعاف، TP3 اربعة ونصف.
+التزم بهذا القالب حرفيا:
+✅ تحليل [الزوج من الصورة] / [السعر من الصورة]
+نبذة: [جملة واحدة عن الاتجاه العام]
+الدعم: [منطقة الدعم القريبة من الصور]
+المقاومة: [منطقة المقاومة القريبة من الصور]
+الفاصل: [سعر الفاصل]
+📈 شراء: دخول [سعر] | وقف [سعر 10-15 نقطة] | الأهداف: TP1 [ضعف] - TP2 [3 اضعاف] - TP3 [4.5 ضعف]
+📉 بيع: دخول [سعر] | وقف [سعر 10-15 نقطة] | الأهداف: TP1 [ضعف] - TP2 [3 اضعاف] - TP3 [4.5 ضعف]
+"""
+
+allowed_users = set()
+WELCOME_MSG = """مرحبا MOUSA ALSERHANI🇱🇾
+1D Line chart (نظيف)
+4H candles 
+1H candles
+15M candles
+5M candles
+1M candles
+أرسل الشارتات الستة الآن للتحليل 📊"""
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id in allowed_users:
+        await update.message.reply_text(WELCOME_MSG)
+    else:
+        await update.message.reply_text("🔒 هذا بوت خاص ولا يعمل إلا برمز دخول.\nمن فضلك أدخل رمز الدخول لتفعيل البوت:")
+
+async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id in allowed_users:
+        await update.message.reply_text("أرسل الشارتات كصور 📊")
+        return
+    if update.message.text.strip() == BOT_PASSWORD:
+        allowed_users.add(user_id)
+        await update.message.reply_text(f"✅ تم التفعيل بنجاح!\n\n{WELCOME_MSG}")
+    else:
+        await update.message.reply_text("❌ الرمز خطأ، حاول مرة أخرى.")
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in allowed_users:
+        await update.message.reply_text("🔒 هذا بوت خاص. أرسل /start وأدخل رمز الدخول.")
+        return
+    if not model:
+        await update.message.reply_text("❌ خطأ في مفتاح API. تأكد من GEMINI_API_KEY في Render")
+        return
+    await update.message.reply_text("تم الاستلام، جاري تحليل MALAYSIAN SNR... ⏳")
+    photo_file = await update.message.photo[-1].get_file()
+    await photo_file.download_to_drive("chart.jpg")
+    try:
+        f = genai.upload_file(path="chart.jpg")
+        res = model.generate_content([SYSTEM_PROMPT, f])
+        await update.message.reply_text(res.text)
+    except Exception as e:
+        await update.message.reply_text(f"خطأ في التحليل: {e}")
+
+def main():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
