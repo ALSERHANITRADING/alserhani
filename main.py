@@ -29,7 +29,7 @@ api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.geten
 client = genai.Client(api_key=api_key)
 
 # واستعمل الموديل هذا
-model = "gemini-2.0-flash"
+model = "gemini-3.6-flash"
 
 SYSTEM_PROMPT = """
 انت خبير MALAYSIAN SNR EMPEROR.
@@ -49,6 +49,7 @@ SYSTEM_PROMPT = """
 """
 
 allowed_users = set()
+user_data = {}
 WELCOME_MSG = """مرحبا MOUSA ALSERHANI🇱🇾
 1D Line chart (نظيف)
 4H candles 
@@ -61,6 +62,8 @@ WELCOME_MSG = """مرحبا MOUSA ALSERHANI🇱🇾
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {"pdf": None, "images": []}
     if user_id in allowed_users:
         await update.message.reply_text(WELCOME_MSG)
     else:
@@ -73,6 +76,7 @@ async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if update.message.text.strip() == BOT_PASSWORD:
         allowed_users.add(user_id)
+        user_data[user_id] = {"pdf": None, "images": []}
         await update.message.reply_text(f"✅ تم التفعيل بنجاح!\n\n{WELCOME_MSG}")
     else:
         await update.message.reply_text("❌ الرمز خطأ، حاول مرة أخرى.")
@@ -84,13 +88,32 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not client:
         await update.message.reply_text("❌ خطأ في مفتاح API. تأكد من GOOGLE_API_KEY في Render")
         return
-    await update.message.reply_text("تم الاستلام، جاري تحليل MALAYSIAN SNR... ⏳")
+    user_id = update.effective_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {"pdf": None, "images": []}
+    
     photo_file = await update.message.photo[-1].get_file()
-    await photo_file.download_to_drive("chart.jpg")
+    path = f"chart_{user_id}_{len(user_data[user_id]['images'])}.jpg"
+    await photo_file.download_to_drive(path)
+    uploaded = client.files.upload(file=path)
+    user_data[user_id]["images"].append(uploaded)
+    count = len(user_data[user_id]["images"])
+
+    if count < 6:
+        await update.message.reply_text(f"✅ تم الاستلام ({count}/6) - انتظر التحليل والرد")
+        return
+
+    await update.message.reply_text("✅ تم الاستلام، انتظر التحليل والرد")
     try:
-        f = client.files.upload(file="chart.jpg")
-        res = client.models.generate_content(model=model, contents=[SYSTEM_PROMPT, f])
+        if user_data[user_id]["pdf"] is None:
+            await update.message.reply_text("❌ أرسل ملف PDF أولا")
+            user_data[user_id]["images"] = []
+            return
+        # يحلل بناء على ملف الـ PDF فقط + 6 صور
+        contents = [SYSTEM_PROMPT + "\nحلل بناء على ملف الـ PDF فقط وطبق قواعده.", user_data[user_id]["pdf"]] + user_data[user_id]["images"]
+        res = client.models.generate_content(model=model, contents=contents)
         await update.message.reply_text(res.text)
+        user_data[user_id]["images"] = []
     except Exception as e:
         await update.message.reply_text(f"خطأ في التحليل: {e}")
 
@@ -102,14 +125,20 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ خطأ في مفتاح API")
         return
     
-    await update.message.reply_text("📚 استلمت كتاب PDF، نقرا فيه ونحلله حسب استراتيجية MALAYSIAN SNR...⏳")
+    user_id = update.effective_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {"pdf": None, "images": []}
+    
+    if user_data[user_id]["pdf"] is not None:
+        await update.message.reply_text("✅ تم الاستلام، انتظر التحليل والرد")
+        return
+
     try:
         doc_file = await update.message.document.get_file()
         await doc_file.download_to_drive("book.pdf")
         uploaded_file = client.files.upload(file="book.pdf")
-        prompt = SYSTEM_PROMPT + "\n\nهذا ملف PDF لكتاب Malaysian SNR Emperor. حلله وطبق كل قواعده."
-        res = client.models.generate_content(model=model, contents=[prompt, uploaded_file])
-        await update.message.reply_text(res.text)
+        user_data[user_id]["pdf"] = uploaded_file
+        await update.message.reply_text("✅ تم الاستلام، انتظر التحليل والرد")
     except Exception as e:
         await update.message.reply_text(f"خطأ في قراءة PDF: {e}")
 
