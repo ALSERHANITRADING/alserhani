@@ -4,22 +4,19 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-# يقبل أي مفتاح سواء يبدأ بـ AIza أو AQ
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_BACKUP") # مفتاح احتياطي
+GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_BACKUP")
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "LIBYA1288")
 
-# دالة ذكية لتجربة المفاتيح
 def get_model():
     keys_to_try = [GEMINI_API_KEY, GEMINI_API_KEY_2]
     for key in keys_to_try:
         if not key:
             continue
         try:
-            key = key.strip() # يمسح أي مسافات
+            key = key.strip()
             genai.configure(api_key=key)
             model = genai.GenerativeModel('gemini-1.5-flash')
-            # تجربة سريعة
             print(f"تم تجربة مفتاح يبدأ بـ {key[:4]}... نجح")
             return model
         except Exception as e:
@@ -54,7 +51,8 @@ WELCOME_MSG = """مرحبا MOUSA ALSERHANI🇱🇾
 15M candles
 5M candles
 1M candles
-أرسل الشارتات الستة الآن للتحليل 📊"""
+أرسل الشارتات الستة الآن للتحليل 📊
+تقدر تبعت ملف PDF للكتاب ايضا 📚"""
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -66,7 +64,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id in allowed_users:
-        await update.message.reply_text("أرسل الشارتات كصور 📊")
+        await update.message.reply_text("أرسل الشارتات كصور 📊 او ابعت ملف PDF")
         return
     if update.message.text.strip() == BOT_PASSWORD:
         allowed_users.add(user_id)
@@ -91,10 +89,34 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"خطأ في التحليل: {e}")
 
+# --- كود جديد لقراية PDF ---
+async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in allowed_users:
+        await update.message.reply_text("🔒 هذا بوت خاص. أرسل /start")
+        return
+    if not model:
+        await update.message.reply_text("❌ خطأ في مفتاح API")
+        return
+    
+    await update.message.reply_text("📚 استلمت كتاب PDF، نقرا فيه ونحلله حسب استراتيجية MALAYSIAN SNR...⏳")
+    try:
+        doc_file = await update.message.document.get_file()
+        await doc_file.download_to_drive("book.pdf")
+        
+        uploaded_file = genai.upload_file(path="book.pdf")
+        
+        prompt = SYSTEM_PROMPT + "\n\nهذا ملف PDF لكتاب Malaysian SNR Emperor. حلله وطبق كل قواعده (Fresh SNR, Storyline MRM/WRW/DRD, Engulfing, Trendline, Setups) وبعدها لما يبعتلك شارتات حلل على اساسه."
+        
+        res = model.generate_content([prompt, uploaded_file])
+        await update.message.reply_text(res.text)
+    except Exception as e:
+        await update.message.reply_text(f"خطأ في قراءة PDF: {e}")
+
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf)) # هذا السطر الجديد اللي يوافق على PDF
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
     app.run_polling()
 
