@@ -21,14 +21,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "LIBYA1288")
 
-# --- هذا هو الكود الجديد اللي طلبته ---
 from google import genai
 import os
 
 api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_BACKUP")
 client = genai.Client(api_key=api_key)
 
-# واستعمل الموديل هذا
 model = "gemini-3.6-flash"
 
 SYSTEM_PROMPT = """
@@ -109,7 +107,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ أرسل ملف PDF أولا")
             user_data[user_id]["images"] = []
             return
-        # يحلل بناء على ملف الـ PDF فقط + 6 صور
         contents = [SYSTEM_PROMPT + "\nحلل بناء على ملف الـ PDF فقط وطبق قواعده.", user_data[user_id]["pdf"]] + user_data[user_id]["images"]
         res = client.models.generate_content(model=model, contents=contents)
         await update.message.reply_text(res.text)
