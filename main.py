@@ -107,7 +107,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ أرسل ملف PDF أولا")
             user_data[user_id]["images"] = []
             return
-        contents = [SYSTEM_PROMPT + "\nحلل بناء على ملف الـ PDF فقط وطبق قواعده.", user_data[user_id]["pdf"]] + user_data[user_id]["images"]
+        # السطر الصارم الجديد اللي يمنع الاختراع
+        contents = [SYSTEM_PROMPT + "\nممنوع الاختراع. حلل بناء على ملف الـ PDF فقط وطبق استراتيجية MALAYSIAN SNR الموجودة فيه حرفيا. اذا لا يوجد دخول مطابق قل لا يوجد دخول. اذكر الفصل والصفحة.", user_data[user_id]["pdf"]] + user_data[user_id]["images"]
         res = client.models.generate_content(model=model, contents=contents)
         await update.message.reply_text(res.text)
         user_data[user_id]["images"] = []
