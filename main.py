@@ -19,27 +19,17 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_KEY")
-GEMINI_API_KEY_2 = os.getenv("GEMINI_API_KEY_BACKUP")
 BOT_PASSWORD = os.getenv("BOT_PASSWORD", "LIBYA1288")
 
-def get_model():
-    keys_to_try = [GEMINI_API_KEY, GEMINI_API_KEY_2]
-    for key in keys_to_try:
-        if not key:
-            continue
-        try:
-            key = key.strip()
-            client = genai.Client(api_key=key)
-            client.models.generate_content(model='gemini-2.0-flash', contents='hi')
-            print(f"تم تجربة مفتاح يبدأ بـ {key[:4]}... نجح")
-            return client
-        except Exception as e:
-            print(f"فشل المفتاح {key[:4]}: {e}")
-            continue
-    return None
+# --- هذا هو الكود الجديد اللي طلبته ---
+from google import genai
+import os
 
-client = get_model()
+api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_BACKUP")
+client = genai.Client(api_key=api_key)
+
+# واستعمل الموديل هذا
+model = "gemini-2.0-flash"
 
 SYSTEM_PROMPT = """
 انت خبير MALAYSIAN SNR EMPEROR.
@@ -92,19 +82,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔒 هذا بوت خاص. أرسل /start وأدخل رمز الدخول.")
         return
     if not client:
-        await update.message.reply_text("❌ خطأ في مفتاح API. تأكد من GEMINI_API_KEY في Render")
+        await update.message.reply_text("❌ خطأ في مفتاح API. تأكد من GOOGLE_API_KEY في Render")
         return
     await update.message.reply_text("تم الاستلام، جاري تحليل MALAYSIAN SNR... ⏳")
     photo_file = await update.message.photo[-1].get_file()
     await photo_file.download_to_drive("chart.jpg")
     try:
         f = client.files.upload(file="chart.jpg")
-        res = client.models.generate_content(model="gemini-2.0-flash", contents=[SYSTEM_PROMPT, f])
+        res = client.models.generate_content(model=model, contents=[SYSTEM_PROMPT, f])
         await update.message.reply_text(res.text)
     except Exception as e:
         await update.message.reply_text(f"خطأ في التحليل: {e}")
 
-# --- كود جديد لقراية PDF ---
 async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in allowed_users:
         await update.message.reply_text("🔒 هذا بوت خاص. أرسل /start")
@@ -117,12 +106,9 @@ async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         doc_file = await update.message.document.get_file()
         await doc_file.download_to_drive("book.pdf")
-        
         uploaded_file = client.files.upload(file="book.pdf")
-        
-        prompt = SYSTEM_PROMPT + "\n\nهذا ملف PDF لكتاب Malaysian SNR Emperor. حلله وطبق كل قواعده (Fresh SNR, Storyline MRM/WRW/DRD, Engulfing, Trendline, Setups) وبعدها لما يبعتلك شارتات حلل على اساسه."
-        
-        res = client.models.generate_content(model="gemini-2.0-flash", contents=[prompt, uploaded_file])
+        prompt = SYSTEM_PROMPT + "\n\nهذا ملف PDF لكتاب Malaysian SNR Emperor. حلله وطبق كل قواعده."
+        res = client.models.generate_content(model=model, contents=[prompt, uploaded_file])
         await update.message.reply_text(res.text)
     except Exception as e:
         await update.message.reply_text(f"خطأ في قراءة PDF: {e}")
