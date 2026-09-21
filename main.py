@@ -1,134 +1,90 @@
-import os, json
-from flask import Flask
-import threading
-
-app = Flask(__name__)
-@app.route('/')
-def home(): return "Bot is alive!"
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-threading.Thread(target=run_web, daemon=True).start()
-
-from google import genai
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import os, requests, time
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-BOT_PASSWORD = os.getenv("BOT_PASSWORD", "LIBYA1288")
-api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_BACKUP")
-client = genai.Client(api_key=api_key)
-model = "gemini-3.6-flash" # خليتهولك زي ما تبي انت
+CHAT_ID = os.getenv("CHAT_ID")
+FOREX_API = os.getenv("FOREX_API_KEY")
 
-GLOBAL_PDF_FILE = None
-if os.path.exists("book.pdf"):
+SYMBOLS = ["EUR/USD","GBP/USD","USD/JPY","XAU/USD","XAG/USD","GBP/JPY","AUD/USD","USD/CHF","EUR/GBP","EUR/JPY","GBP/AUD"]
+
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+
+def get_candles(symbol, interval):
+    url = f"https://api.twelvedata.com/candles?symbol={symbol}&interval={interval}&apikey={FOREX_API}&outputsize=100"
     try:
-        GLOBAL_PDF_FILE = client.files.upload(file="book.pdf")
-        print("PDF loaded from disk")
-    except Exception as e:
-        print(f"Error: {e}")
+        data = requests.get(url, timeout=10).json()
+        return data.get("values", [])[::-1]
+    except:
+        return []
 
-SYSTEM_PROMPT = """
-انت خبير MALAYSIAN SNR EMPEROR. ممنوع الاختراع نهائيا. حلل من ملف PDF فقط حرفيا.
+def check_market():
+    for symbol in SYMBOLS:
+        daily = get_candles(symbol, "1day")
+        h4 = get_candles(symbol, "4h")
+        h1 = get_candles(symbol, "1h")
+        if not daily or not h4 or not h1: continue
+        
+        price = float(daily[-1]["close"])
+        last_daily_high = max(float(c["high"]) for c in daily[-20:-1])
+        last_daily_low = min(float(c["low"]) for c in daily[-20:-1])
+        last_h4_high = max(float(c["high"]) for c in h4[-20:-1])
+        last_h4_low = min(float(c["low"]) for c in h4[-20:-1])
 
-قواعد اجبارية:
-1. استخرج الزوج والسعر الحالي من الصور الستة.
-2. طبق استراتيجية الماليزي SNR من ملف PDF فقط. ممنوع تستخدم اي معرفة خارجية.
-3. يجب ان تذكر القصة السعرية والمرجع (اسم الفصل ورقم الصفحة من PDF) في كل رد.
-4. حدد نوع الدخول حسب PDF فقط: NOW اذا عند مستوى Fresh، LIMIT اذا بعيد.
+        # === Setup 1: High Risk / SCALPING ===
+        # الشرط من الكتاب: لمس مستوى Daily فريش
+        if abs(price - last_daily_high) < (price * 0.001):
+            send_telegram(f"""🚨 *فرصة واضحة - Setup 1*
+📊 الزوج: {symbol}
+🎯 النوع: SCALPING - High Risk (50/50)
+📈 الاتجاه: SELL
+📍 السعر الحالي: {price}
 
-5. قاعدة وقف الخسارة والاهداف:
-   - اذا الزوج ذهب (XAUUSD / GOLD): وقف الخسارة ثابت 100 نقطة = 10 دولار خلف مستوى Fresh. TP1=100 نقطة (10$) TP2=200 نقطة (20$) TP3=300 نقطة (30$).
-   - اذا الزوج عملات (EURUSD وغيره): وقف الخسارة والاهداف حسب ما هو مذكور في ملف PDF عند مستوى Fresh SNR، لا تستخدم نظام 10 دولار، استخدم النقاط المذكورة في الكتاب.
+📌 *وين تحط الستوب:*
+فوق مستوى المقاومة Daily الفريش بـ 20 نقطة (فوق {last_daily_high})
 
-قالب الرد اذا وجدت فرصة (اجباري):
-📖 القصة السعرية: [سطر او سطرين يوضح القصة من الكتاب]
-📍 وضع السعر الان: [صاعد/هابط ووين مكانه بالنسبة للمستوى الطازج]
-المرجع: الفصل [الاسم] صفحة [الرقم] - [اسم القاعدة]
+📌 *وين تحط التيك بروفت:*
+TP1: عند أول دعم H4 في الطريق (Roadblock)
+TP2: عند مستوى الدعم Daily المقابل
 
-الخلاصة:
-GOLD BUY NOW 4365
-TP : 4375
-TP : 4385
-TP : 4395
-SL : 4355
+💡 السبب: السعر لمس مستوى Daily فريش مباشرة بدون تأكيد""")
 
-قالب الرد اذا لا يوجد دخول (اجباري ولا تكتب انجليزي):
-لا يوجد دخول الان بناء على الملف
-السبب: [اشرح علاش لا يوجد مستوى Fresh طازج حسب الكتاب]
-المرجع: الفصل [الاسم] صفحة [الرقم]
-"""
+        # === Setup 2: Medium Risk / INTRADAY ===
+        if float(h4[-1]["close"]) > last_h4_high: # H4 Breakout بعد DRD
+            send_telegram(f"""✅ *فرصة واضحة - Setup 2*
+📊 الزوج: {symbol}
+🎯 النوع: INTRADAY - Medium Risk
+📈 الاتجاه: BUY
+📍 السعر الحالي: {price}
 
-allowed_users = set()
-if os.path.exists("allowed.json"):
-    try:
-        with open("allowed.json", "r") as f: allowed_users = set(json.load(f))
-    except: pass
+📌 *وين تحط الستوب:*
+تحت آخر مستوى H4 فريش تكون قبل الكسر بـ 20 نقطة
 
-user_data = {}
-WELCOME_MSG = """مرحبا MOUSA ALSERHANI🇱🇾
-ارسل 6 شارتات:
-1D - 4H - 1H - 15M - 5M - 1M
-الـ PDF محفوظ، ابعت صور بس!"""
+📌 *وين تحط التيك بروفت:*
+TP1: عند منطقة QM على H1
+TP2: عند مقاومة Daily التالية
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in user_data: user_data[user_id] = {"images": []}
-    if user_id in allowed_users: await update.message.reply_text(WELCOME_MSG)
-    else: await update.message.reply_text("🔒 بوت خاص، ادخل رمز الدخول:")
+💡 السبب: Daily Rejects Daily + H4 Breakout + رجوع متوقع للـ QM""")
 
-async def check_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id in allowed_users: return
-    if update.message.text.strip() == BOT_PASSWORD:
-        allowed_users.add(user_id)
-        with open("allowed.json", "w") as f: json.dump(list(allowed_users), f)
-        user_data[user_id] = {"images": []}
-        await update.message.reply_text(f"✅ تم التفعيل!\n\n{WELCOME_MSG}")
-    else: await update.message.reply_text("❌ الرمز خطأ")
+        # === Setup 3: Low Risk / SWING - أقوى setup في الكتاب ===
+        if float(h4[-1]["close"]) < last_h4_low:
+            send_telegram(f"""⭐ *فرصة قوية جدا - Setup 3 LOW RISK*
+📊 الزوج: {symbol}
+🎯 النوع: SWING
+📈 الاتجاه: SELL
+📍 السعر الحالي: {price}
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in allowed_users: return
-    global GLOBAL_PDF_FILE
-    if GLOBAL_PDF_FILE is None and os.path.exists("book.pdf"):
-        try: GLOBAL_PDF_FILE = client.files.upload(file="book.pdf")
-        except: pass
-    if GLOBAL_PDF_FILE is None:
-        await update.message.reply_text("❌ ابعت ملف PDF مرة واحدة فقط اول مرة")
-        return
-    user_id = update.effective_user.id
-    if user_id not in user_data: user_data[user_id] = {"images": []}
-    photo_file = await update.message.photo[-1].get_file()
-    path = f"chart_{user_id}_{len(user_data[user_id]['images'])}.jpg"
-    await photo_file.download_to_drive(path)
-    uploaded = client.files.upload(file=path)
-    user_data[user_id]["images"].append(uploaded)
-    if len(user_data[user_id]["images"]) < 6:
-        await update.message.reply_text(f"✅ تم الاستلام ({len(user_data[user_id]['images'])}/6)")
-        return
-    await update.message.reply_text("✅ تم الاستلام، انتظر التحليل")
-    try:
-        contents = [SYSTEM_PROMPT, GLOBAL_PDF_FILE] + user_data[user_id]["images"]
-        res = client.models.generate_content(model=model, contents=contents)
-        await update.message.reply_text(res.text)
-        user_data[user_id]["images"] = []
-    except Exception as e: await update.message.reply_text(f"خطأ: {e}")
+📌 *وين تحط الستوب:*
+فوق آخر قمة H1 فريش تكون فوق منطقة الدخول
 
-async def handle_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in allowed_users: return
-    global GLOBAL_PDF_FILE
-    try:
-        doc_file = await update.message.document.get_file()
-        await doc_file.download_to_drive("book.pdf")
-        GLOBAL_PDF_FILE = client.files.upload(file="book.pdf")
-        await update.message.reply_text("✅ تم حفظ الـ PDF للأبد! معاش تبعته مرة ثانية، ابعت صور بس.")
-    except Exception as e: await update.message.reply_text(f"خطأ PDF: {e}")
+📌 *وين تحط التيك بروفت:*
+TP1: عند أول دعم Daily (Roadblock)
+TP2: مفتوح حتى يصل لمستوى Weekly المقابل - Storyline Weekly to Weekly
 
-def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_password))
-    app.run_polling()
-if __name__ == "__main__": main()
+💡 السبب: ستوري لاين مكتمل + كسر + Pullback لـ QM فريش""")
+
+        time.sleep(1)
+
+while True:
+    check_market()
+    time.sleep(300) # كل 5 دقائق
