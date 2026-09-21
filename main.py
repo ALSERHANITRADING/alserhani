@@ -165,7 +165,7 @@ def loop():
     while True:
         try: check_all()
         except Exception as e: print(e)
-        time.sleep(600)
+        time.sleep(1800)
 
 threading.Thread(target=loop, daemon=True).start()
 if __name__ == "__main__":
