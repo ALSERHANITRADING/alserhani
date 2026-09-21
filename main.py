@@ -1,5 +1,5 @@
-import os, requests, time, threading, base64, io
-from flask import Flask
+import os, requests, time, threading, base64
+from flask import Flask, request
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -12,7 +12,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 FOREX_API = os.getenv("FOREX_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# --- كود الحماية المضاف فقط ---
+# --- حماية LIBYA1288 ---
 AUTH_CODE = "LIBYA1288"
 AUTHORIZED_FILE = "/tmp/authorized.txt"
 
@@ -33,19 +33,16 @@ def save_authorized(cid):
 
 def is_authorized(cid):
     return str(cid) in load_authorized()
-# --- نهاية كود الحماية ---
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 SYMBOLS = ["EUR/USD","GBP/USD","USD/JPY","XAU/USD","GBP/JPY","XAG/USD"]
 sent_today = set()
 
 @app.route('/')
-def home(): return "AI Malaysian SNR - ALL SETUPS"
+def home(): return "AI Malaysian SNR - LIBYA1288 SECURED"
 
-# --- Webhook للتحقق من الرمز ---
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
-    from flask import request
     try:
         data = request.get_json()
         if data and "message" in data:
@@ -56,11 +53,11 @@ def telegram_webhook():
                 if code == AUTH_CODE:
                     save_authorized(chat_id)
                     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                    requests.post(url, data={"chat_id": chat_id, "text": "✅ تم التفعيل! الرمز صحيح، حتستقبل التنبيهات يوميا"})
+                    requests.post(url, data={"chat_id": chat_id, "text": "✅ تم التفعيل! LIBYA1288 صحيح - حتستقبل التحليلات الدقيقة يوميا"})
                 else:
                     if not is_authorized(chat_id):
                         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                        requests.post(url, data={"chat_id": chat_id, "text": "❌ الرمز غلط، اكتب /start LIBYA1288"})
+                        requests.post(url, data={"chat_id": chat_id, "text": "❌ الرمز غلط - اكتب /start LIBYA1288"})
     except: pass
     return "ok"
 
@@ -86,20 +83,41 @@ def draw_candles(daily, h4, symbol):
 
 def analyze_ai(symbol):
     prompt = f"""
-    انت خبير Malaysian SNR (كتاب 67 صفحة). حلل {symbol}.
-    شوف الصورة: فوق Daily وتحت H4.
-    جاوب بهذا الشكل فقط:
-    1- هل يوجد مستوى FRESH؟ (نعم/لا ومكانه)
-    2- هل يوجد Marubozu + Engulf؟ 
-    3- هل يوجد Roadblock قدام السعر؟
-    4- القرار: [SETUP 1 SCALPING SELL/BUY او SETUP 2 INTRADAY او SETUP 3 SWING او لا يوجد]
-    5- دخول: XXXXX
-    ستوب: XXXXX
-    تيك1: XXXXX (اول H4)
-    تيك2: XXXXX (QM)
-    نسبة نجاح: %
-    لو لا يوجد قول "لا يوجد" فقط.
-    باللهجة الليبية مختصر.
+    انت خبير Malaysian SNR - كتاب 67 صفحة - التزم بالقوانين حرفيا.
+
+    حلل {symbol} - الصورة فوق DAILY وتحت H4
+
+    قوانين الكتاب المقدسة:
+    1- الشكل: لازم DBD = Drop Base Drop للبيع او RBR = Rally Base Rally للشراء
+    2- القاعدة BASE: 1 الى 3 شمعات فقط، جسم صغير، متلاصقة، تذبذب ضيق
+    3- الخروج: شمعة MARUBOZU قوية جسمها 70% من طول الشمعة تكسر BASE
+    4- ENGULF: الشمعة القوية تبتلع BASE بالكامل
+    5- FRESH: السعر لم يلمس المستوى ابدا بعد تكونه - لو لمسه يعتبر مستهلك
+    6- ROADBLOCK: لا يوجد مستوى H4 قوي بين السعر الحالي ومستواك
+
+    قانون الستوب والتيك بروفت (ثابت زي الكتاب):
+    - الدخول: 2-3 نقاط تحت BASE للبيع / فوق BASE للشراء
+    - الستوب: 10-15 نقطة فوق BASE للبيع / تحت BASE للشراء - احسب BASE بالضبط
+    - تيك1: اول مستوى H4 امام السعر (30-50 نقطة سكالبينج، 50-80 انتراداي)
+    - تيك2: مستوى QM او Daily (80-150 نقطة)
+
+    ممنوع تحط ستوب فوق الماروبوزو - الستوب فوق BASE فقط.
+
+    جاوب هكذا فقط:
+    النوع: DBD/RBR
+    FRESH: نعم/لا
+    BASE: من X الى Y
+    Marubozu+Engulf: نعم/لا
+    Roadblock: لا يوجد/يوجد
+    القرار: SETUP 1 SCALPING SELL/BUY او SETUP 2 INTRADAY او SETUP 3 SWING او لا يوجد
+    دخول: [سعر دقيق]
+    ستوب: [سعر BASE + 10 نقاط] (BASE = X)
+    تيك1: [سعر] (اول H4)
+    تيك2: [سعر] (QM)
+    نسبة: %
+
+    لو مفيش BASE من 1-3 شمعات و FRESH قول "لا يوجد" فقط.
+    لهجة ليبية مختصرة.
     """
     try:
         with open("/tmp/chart.png", "rb") as f:
@@ -115,7 +133,6 @@ def analyze_ai(symbol):
 
 def send_msg(text, photo_path=None):
     try:
-        # يبعث فقط للمفعلين
         for cid in load_authorized():
             if photo_path:
                 url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
@@ -134,24 +151,20 @@ def check_all():
         daily = get_candles(symbol, "1day")
         h4 = get_candles(symbol, "4h")
         if not daily or not h4: continue
-        
         draw_candles(daily, h4, symbol)
         analysis = analyze_ai(symbol)
-        
-        if "لا يوجد" not in analysis and len(analysis) > 20:
-            send_msg(f"🚨 *{symbol} - تحليل ذكي*\n\n{analysis}", "/tmp/chart.png")
+        if "لا يوجد" not in analysis and len(analysis) > 30:
+            send_msg(f"🚨 *{symbol} - تحليل Malaysian دقيق*\n\n{analysis}", "/tmp/chart.png")
             sent_today.add(symbol)
-        time.sleep(4)
-    if len(sent_today) > 10:
+        time.sleep(5)
+    if len(sent_today) >= 6:
         sent_today.clear()
 
 def loop():
-    send_msg("🤖 البوت الذكي اشتغل - يعطي Scalping + Intraday + Swing + نوع الصفقة")
+    send_msg("🤖 البوت اشتغل بالدقة الكاملة - ستوب 10 نقاط فوق BASE + تيك حسب الكتاب - الرمز LIBYA1288")
     while True:
-        try:
-            check_all()
-        except Exception as e:
-            print(e)
+        try: check_all()
+        except Exception as e: print(e)
         time.sleep(600)
 
 threading.Thread(target=loop, daemon=True).start()
