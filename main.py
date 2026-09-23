@@ -162,24 +162,38 @@ def check_gap_signal(symbol, daily_candles):
 @app.route('/')
 def home(): return "AI Malaysian SNR - LIBYA1288 - 6 FLASH - GAP 7DAYS - 6 IMAGES"
 
+# ========== الدالة المصححة - ترد على الحسابات الثانية ==========
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
     try:
         data = request.get_json()
+        print(f"WEBHOOK: {data}")
         if data and "message" in data:
             chat_id = str(data["message"]["chat"]["id"])
             text = data["message"].get("text","").strip()
+
             if text.startswith("/start"):
                 code = text.replace("/start","").strip()
                 if code == AUTH_CODE:
                     save_authorized(chat_id)
                     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                    requests.post(url, data={"chat_id": chat_id, "text": "✅ تم التفعيل! LIBYA1288 صحيح - 6 FLASH"})
+                    requests.post(url, data={"chat_id": chat_id, "text": "✅ تم التفعيل! LIBYA1288 صحيح - 6 IMAGES اشتغل عندك"})
                 else:
                     if not is_authorized(chat_id):
                         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                        requests.post(url, data={"chat_id": chat_id, "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1\n\nBot is private for ALSERHANI team."})
-    except: pass
+                        requests.post(url, data={
+                            "chat_id": chat_id,
+                            "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1\n\nBot is private for ALSERHANI team."
+                        })
+            else:
+                if not is_authorized(chat_id):
+                    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+                    requests.post(url, data={
+                        "chat_id": chat_id,
+                        "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1"
+                    })
+    except Exception as e:
+        print(f"Webhook error: {e}")
     return "ok"
 
 def get_candles(symbol, interval, size=100):
@@ -192,7 +206,6 @@ def get_candles(symbol, interval, size=100):
 # ========== التعديل الجديد - 6 صور منفصلة ==========
 def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     paths = []
-    # 1- MONTHLY LINE
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     closes = [float(c["close"]) for c in monthly[-60:]]
@@ -205,7 +218,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.close()
     paths.append(p1)
 
-    # 2- WEEKLY LINE
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     closes = [float(c["close"]) for c in weekly[-60:]]
@@ -218,7 +230,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.close()
     paths.append(p2)
 
-    # 3- DAILY LINE+CANDLE
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     ax = plt.gca()
@@ -237,7 +248,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.close()
     paths.append(p3)
 
-    # 4- H4
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     ax = plt.gca()
@@ -254,7 +264,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.close()
     paths.append(p4)
 
-    # 5- H1 QM
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     ax = plt.gca()
@@ -271,7 +280,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.close()
     paths.append(p5)
 
-    # 6- M15 MICRO
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     ax = plt.gca()
@@ -294,16 +302,13 @@ def analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15):
     prompt = f"""
     انت خبير Malaysian SNR - كتاب 67 صفحة.
     حلل {symbol} - عندك 6 صور بالترتيب:
-
-    صورة 1 MONTHLY LINE ذهبي: ترند فلتر - شن اتجاه 10 سنين؟
-    صورة 2 WEEKLY LINE سماوي: هل فيه Roadblock قدام السعر؟ وهل المنطقة FRESH؟
-    صورة 3 DAILY LINE+CANDLE: دور DBD/RBR - BASE 1-3 شمعات صغار - Marubozu 70% + Engulf - FRESH؟
-    صورة 4 H4: تأكيد الدخول - التيك1
-    صورة 5 H1: شكل QM
-    صورة 6 M15: دخول جراحي 2-3 نقاط
-
+    صورة 1 MONTHLY LINE ذهبي: ترند فلتر
+    صورة 2 WEEKLY LINE سماوي: Roadblock & FRESH
+    صورة 3 DAILY: DBD/RBR - BASE 1-3 - Marubozu 70% + Engulf
+    صورة 4 H4: تأكيد
+    صورة 5 H1: QM
+    صورة 6 M15: دخول 2-3 نقاط
     قوانين: DBD/RBR فقط - BASE صغار - Marubozu+Engulf - FRESH - Roadblock
-    ستوب 10-15 فوق BASE - دخول 2-3 نقاط - تيك1 H4 تيك2 QM
     جاوب: النوع/FRESH/BASE/Marubozu+Engulf/Roadblock/القرار/دخول/ستوب/تيك1/تيك2/نسبة
     لو مفيش قول "لا يوجد" - لهجة ليبية مختصرة.
     """
@@ -319,7 +324,7 @@ def analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15):
             model="gemini-2.5-flash",
             contents=contents
         )
-        return res.text, paths[2] # نرجع تحليل + صورة الديلي للتيليجرام
+        return res.text, paths[2]
     except Exception as e:
         print(e)
         return "لا يوجد", None
@@ -342,7 +347,6 @@ def check_all():
     send_daily_news_if_time()
     for symbol in SYMBOLS:
         if symbol in sent_today: continue
-        # جلب 6 فريمات
         monthly = get_candles(symbol, "1month", size=60)
         weekly = get_candles(symbol, "1week", size=60)
         daily = get_candles(symbol, "1day", size=100)
