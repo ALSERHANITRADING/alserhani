@@ -332,7 +332,7 @@ def analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15):
                 contents.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(img).decode()}})
 
         res = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-1.5-flash",
             contents=contents
         )
         return res.text, paths[2]
@@ -364,7 +364,7 @@ def check_all():
         h4 = get_candles(symbol, "4h", size=100)
         h1 = get_candles(symbol, "1h", size=100)
         m15 = get_candles(symbol, "15min", size=100)
-        if not daily or not h4: continue
+        if not daily or len(daily) < 10 or not h4 or len(h4) < 10: continue
         check_gap_signal(symbol, daily)
         is_blocked, news_info = is_news_time_blocking(symbol)
         if is_blocked:
