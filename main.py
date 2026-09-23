@@ -178,7 +178,7 @@ def telegram_webhook():
                 else:
                     if not is_authorized(chat_id):
                         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                        requests.post(url, data={"chat_id": chat_id, "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani\n\nBot is private for ALSERHANI team."})
+                        requests.post(url, data={"chat_id": chat_id, "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1\n\nBot is private for ALSERHANI team."})
     except: pass
     return "ok"
 
@@ -263,7 +263,10 @@ def check_all():
         sent_today.clear()
 
 def loop():
-    send_msg("🤖 البوت اشتغل - 6 FLASH + فجوة 7 أيام + فلتر أخبار + انزلاق - LIBYA1288")
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": "🤖 البوت اشتغل - 6 FLASH + فجوة 7 أيام + فلتر أخبار + انزلاق - LIBYA1288"})
+    except: pass
     while True:
         try: check_all()
         except Exception as e: print(e)
