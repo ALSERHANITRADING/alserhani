@@ -13,7 +13,6 @@ CHAT_ID = os.getenv("CHAT_ID")
 FOREX_API = os.getenv("FOREX_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# --- حماية LIBYA1288 ---
 AUTH_CODE = "LIBYA1288"
 AUTHORIZED_FILE = "/tmp/authorized.txt"
 
@@ -39,7 +38,6 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 SYMBOLS = ["EUR/USD","GBP/USD","USD/JPY","XAU/USD","GBP/JPY","XAG/USD"]
 sent_today = set()
 
-# ========== الفلاتر الجديدة ==========
 NEWS_BLOCK_BEFORE_MIN = 30
 NEWS_BLOCK_AFTER_MIN = 15
 LAST_NEWS_CACHE = {"time": None, "events": []}
@@ -126,16 +124,10 @@ def check_gap_signal(symbol, daily_candles):
         curr_price = float(daily_candles[-1]["close"])
         gap_pips = (curr_open - prev_close) * 10000
         if "JPY" in symbol: gap_pips = (curr_open - prev_close) * 100
-
         if abs(gap_pips) >= 10 and symbol not in GAP_TRACKER:
-            GAP_TRACKER[symbol] = {
-                "prev_close": prev_close, "gap_open": curr_open,
-                "day": 1, "type": "صاعدة" if gap_pips > 0 else "هابطة",
-                "target": prev_close, "size": abs(gap_pips)
-            }
+            GAP_TRACKER[symbol] = {"prev_close": prev_close, "gap_open": curr_open, "day": 1, "type": "صاعدة" if gap_pips > 0 else "هابطة", "target": prev_close, "size": abs(gap_pips)}
             send_msg(f"⚠️ *فجوة {GAP_TRACKER[symbol]['type']} في {symbol} - {abs(gap_pips):.1f} نقطة*\nمن {prev_close} الى {curr_open}\nحنراقبها 7 أيام وعلامة التسكير = BASE مصيدة + Engulf")
             return False, ""
-
         if symbol in GAP_TRACKER:
             info = GAP_TRACKER[symbol]
             h4 = get_candles(symbol, "4h", size=20)
@@ -147,7 +139,6 @@ def check_gap_signal(symbol, daily_candles):
                 is_bull_engulf = info["type"] == "هابطة" and float(engulf["close"]) > float(bases[0]["open"])
                 if base_small and (is_bear_engulf or is_bull_engulf):
                     send_msg(f"🔥 *الآن يتم تسكير الفجوة في {symbol}*\nالفجوة {info['type']} ليها {info['day']} أيام - تكونت BASE مصيدة + Marubozu Engulf\nالهدف: {info['target']}")
-
             closed = curr_price <= info["prev_close"] if info["type"] == "صاعدة" else curr_price >= info["prev_close"]
             if closed:
                 send_msg(f"✅ *{symbol} سكرت الفجوة بعد {info['day']} أيام*")
@@ -162,27 +153,22 @@ def check_gap_signal(symbol, daily_candles):
 @app.route('/')
 def home(): return "AI Malaysian SNR - LIBYA1288 - 6 FLASH - GAP 7DAYS - 6 IMAGES"
 
-# ========== السكريبت الجديد - باش Cron ينوضه كل نص ساعة ==========
 @app.route('/trigger')
 def trigger_cron():
-    # هذا الرابط ينضرب من Cron Job كل 30 دقيقة
     threading.Thread(target=check_all).start()
-    return "OK - Triggered every 30min - LIBYA1288"
+    return "OK - Triggered - LIBYA1288"
 
 @app.route('/health')
 def health():
-    return "alive"
+    return {"status": "ok", "alive": True}, 200
 
-# ========== الدالة المصححة - ترد على الحسابات الثانية ==========
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
     try:
         data = request.get_json()
-        print(f"WEBHOOK: {data}")
         if data and "message" in data:
             chat_id = str(data["message"]["chat"]["id"])
             text = data["message"].get("text","").strip()
-
             if text.startswith("/start"):
                 code = text.replace("/start","").strip()
                 url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -192,17 +178,11 @@ def telegram_webhook():
                 elif is_authorized(chat_id):
                     requests.post(url, data={"chat_id": chat_id, "text": "👋 أهلا بيك من جديد! البوت شغال عندك ✅\n6 IMAGES + فجوة 7 أيام شغال."})
                 else:
-                    requests.post(url, data={
-                        "chat_id": chat_id,
-                        "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1\n\nBot is private for ALSERHANI team."
-                    })
+                    requests.post(url, data={"chat_id": chat_id, "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1"})
             else:
                 if not is_authorized(chat_id):
                     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                    requests.post(url, data={
-                        "chat_id": chat_id,
-                        "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1"
-                    })
+                    requests.post(url, data={"chat_id": chat_id, "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1"})
     except Exception as e:
         print(f"Webhook error: {e}")
     return "ok"
@@ -214,7 +194,6 @@ def get_candles(symbol, interval, size=100):
         return r.get("values", [])[::-1]
     except: return []
 
-# ========== التعديل الجديد - 6 صور منفصلة ==========
 def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     paths = []
     plt.figure(figsize=(10,3))
@@ -228,7 +207,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.savefig(p1, dpi=150)
     plt.close()
     paths.append(p1)
-
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     closes = [float(c["close"]) for c in weekly[-60:]]
@@ -240,7 +218,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.savefig(p2, dpi=150)
     plt.close()
     paths.append(p2)
-
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     ax = plt.gca()
@@ -258,7 +235,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.savefig(p3, dpi=150)
     plt.close()
     paths.append(p3)
-
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     ax = plt.gca()
@@ -274,7 +250,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.savefig(p4, dpi=150)
     plt.close()
     paths.append(p4)
-
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     ax = plt.gca()
@@ -290,7 +265,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.savefig(p5, dpi=150)
     plt.close()
     paths.append(p5)
-
     plt.figure(figsize=(10,3))
     plt.style.use('dark_background')
     ax = plt.gca()
@@ -306,7 +280,6 @@ def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
     plt.savefig(p6, dpi=150)
     plt.close()
     paths.append(p6)
-
     return paths
 
 def analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15):
@@ -330,11 +303,7 @@ def analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15):
             with open(p, "rb") as f:
                 img = f.read()
                 contents.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(img).decode()}})
-
-        res = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=contents
-        )
+        res = client.models.generate_content(model="gemini-1.5-flash", contents=contents)
         return res.text, paths[2]
     except Exception as e:
         print(e)
@@ -374,7 +343,6 @@ def check_all():
             ended, direction = detect_slippage_end(symbol)
             if not ended: continue
             else: SLIPPAGE_WATCH[symbol] = False
-
         analysis, chart_path = analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15)
         if "لا يوجد" not in analysis and len(analysis) > 30:
             send_msg(f"🚨 *{symbol} - 6 IMAGES Malaysian*\n\n{analysis}", chart_path)
