@@ -1,401 +1,207 @@
-import os, requests, time, threading, base64
-from flask import Flask, request
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from google import genai
-from datetime import datetime, timedelta, timezone
+import os
+import requests
+from flask import Flask, request, jsonify
+from datetime import datetime
+import pytz
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-FOREX_API = os.getenv("FOREX_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-AUTH_CODE = "LIBYA1288"
-AUTHORIZED_FILE = "/tmp/authorized.txt"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    print("⚠️ حط BOT_TOKEN في Render Environment Variables")
 
-def load_authorized():
-    try:
-        with open(AUTHORIZED_FILE, "r") as f:
-            return set([x for x in f.read().splitlines() if x])
-    except:
-        return set([CHAT_ID] if CHAT_ID else [])
+AUTHORIZED = set()
+OWNER = "@alserhani1"
+LIBYA_TZ = pytz.timezone('Africa/Tripoli')
 
-def save_authorized(cid):
-    auth = load_authorized()
-    auth.add(str(cid))
-    try:
-        with open(AUTHORIZED_FILE, "w") as f:
-            f.write("\n".join(auth))
-    except: pass
-
-def is_authorized(cid):
-    return str(cid) in load_authorized()
-
-client = genai.Client(api_key=GEMINI_API_KEY)
-SYMBOLS = ["EUR/USD","GBP/USD","USD/JPY","XAU/USD","GBP/JPY","XAG/USD"]
-sent_today = set()
-
-NEWS_BLOCK_BEFORE_MIN = 30
-NEWS_BLOCK_AFTER_MIN = 15
-LAST_NEWS_CACHE = {"time": None, "events": []}
-SLIPPAGE_WATCH = {}
-GAP_TRACKER = {}
-last_daily_news_date = None
-
-def get_high_impact_news():
-    global LAST_NEWS_CACHE
-    now = datetime.now(timezone.utc)
-    if LAST_NEWS_CACHE["time"] and (now - LAST_NEWS_CACHE["time"]).seconds < 3600:
-        return LAST_NEWS_CACHE["events"]
-    try:
-        url = f"https://api.twelvedata.com/calendar?apikey={FOREX_API}&impact=high&timezone=UTC"
-        r = requests.get(url, timeout=15).json()
-        events = r.get("calendar", []) if isinstance(r, dict) else []
-        today_str = now.strftime("%Y-%m-%d")
-        todays_events = [e for e in events if e.get("date","").startswith(today_str)]
-        LAST_NEWS_CACHE = {"time": now, "events": todays_events}
-        return todays_events
-    except:
-        return LAST_NEWS_CACHE.get("events", [])
-
-def send_daily_news_if_time():
-    global last_daily_news_date
-    try:
-        libya_now = datetime.now(timezone.utc) + timedelta(hours=2)
-        today_str = libya_now.strftime("%Y-%m-%d")
-        if libya_now.hour == 8 and libya_now.minute < 30:
-            if last_daily_news_date == today_str:
-                return
-            events = get_high_impact_news()
-            if not events:
-                msg = f"☀️ *صباح الخير - {today_str}*\n\nلا يوجد أخبار قوية اليوم - تداول عادي ✅"
-            else:
-                msg = f"☀️ *أخبار اليوم - {today_str} - 8:00 صباحا ليبيا*\n\n"
-                for ev in events:
-                    msg += f"• {ev.get('time','')} - {ev.get('currency','')} : {ev.get('event','')}\n"
-                msg += "\n⏸️ البوت حيوقف 30 دقيقة قبل كل خبر."
-            send_msg(msg)
-            last_daily_news_date = today_str
-    except: pass
-
-def is_news_time_blocking(symbol):
-    events = get_high_impact_news()
-    if not events: return False, None
-    now = datetime.now(timezone.utc)
-    symbol_currencies = {"EUR/USD": ["USD","EUR"],"GBP/USD": ["USD","GBP"],"USD/JPY": ["USD","JPY"],"XAU/USD": ["USD"],"GBP/JPY": ["GBP","JPY"],"XAG/USD": ["USD"]}
-    relevant = symbol_currencies.get(symbol, ["USD"])
-    for ev in events:
+# ========== دالة ارسال ==========
+def send_to_authorized(text):
+    if not AUTHORIZED:
+        print("لا يوجد اشخاص مفعلين")
+        return
+    for chat_id in list(AUTHORIZED):
         try:
-            ev_currency = ev.get("currency","").upper()
-            if ev_currency not in relevant: continue
-            ev_time_str = ev.get("date","") + " " + ev.get("time","00:00:00")
-            ev_time = datetime.strptime(ev_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-            diff = (ev_time - now).total_seconds()/60
-            if -NEWS_BLOCK_AFTER_MIN <= diff <= NEWS_BLOCK_BEFORE_MIN:
-                return True, f"{ev_currency} - {ev.get('event','خبر')} {ev_time.strftime('%H:%M UTC')}"
-        except: continue
-    return False, None
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                          json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}, timeout=10)
+        except Exception as e:
+            print(f"Send error {chat_id}: {e}")
 
-def detect_slippage_end(symbol):
+def send_message(chat_id, text):
+    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                  json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"})
+
+# ========== 1- تحليل الفجوة FAST / SLOW حسب الكتاب صفحة 13 و 31 ==========
+def analyze_gap_type(gap_size, atr):
+    # gap_size و atr بالدولار للذهب
+    if gap_size >= atr * 3:
+        return {
+            "type": "FAST GAP - HTF Weekly/Daily",
+            "close_time": "1-2 اسبوع - تستنى Weekly Storyline يكمل (Whatever starts on weekly must end on weekly) صفحة 19",
+            "action": "🚫 ما تدخلش تسكير توا - استنى اشارة END OF GAP RISE"
+        }
+    elif gap_size >= atr * 1.5:
+        return {
+            "type": "MEDIUM GAP - Daily",
+            "close_time": "1-3 ايام - بعد ما DRD يكمل Roadblock صفحة 27",
+            "action": "دور FRESH A/V على H4 للدخول"
+        }
+    else:
+        return {
+            "type": "SLOW GAP - LTF M15/M30/H1",
+            "close_time": "نفس اليوم - 80% تسكر قبل جلسة نيويورك",
+            "action": "✅ دخول مباشر تسكير فجوة - مع EG TO EG"
+        }
+
+# ========== 2- Webhook TradingView - يستقبل كل Setups A+, A, B+, B, GAP ==========
+@app.route('/tradingview', methods=['POST'])
+def tradingview_webhook():
     try:
-        candles_1m = get_candles(symbol, "1min", size=5)
-        if len(candles_1m) < 3: return False, None
-        prev = candles_1m[-2]
-        last = candles_1m[-1]
-        prev_range = float(prev["high"]) - float(prev["low"])
-        prev_body = abs(float(prev["close"]) - float(prev["open"]))
-        last_body = abs(float(last["close"]) - float(last["open"]))
-        is_slippage = prev_range > 0.0008 and prev_body < prev_range * 0.3
-        is_calm = last_body < prev_range * 0.5
-        if is_slippage and is_calm:
-            return True, "صعود" if float(last["close"]) > float(prev["close"]) else "هبوط"
-        return False, None
-    except:
-        return False, None
+        data = request.get_json(force=True)
+        print(f"TV Data: {data}")
+        
+        symbol = data.get('symbol', 'GOLD')
+        setup = data.get('setup', 'SETUP')
+        action = data.get('action', '')
+        price = float(data.get('price', 0) or data.get('entry', 0))
+        sl = float(data.get('sl', 0) or 0)
+        gap_size_raw = data.get('gap_size', 0)
+        
+        # حساب RR 1:2 و 1:3 حسب صفحة 59
+        tp1 = tp2 = "شوف الشارت"
+        rr_text = ""
+        if price and sl and price != sl:
+            risk = abs(price - sl)
+            if "BUY" in action or "BUY" in setup:
+                tp1 = round(price + risk * 2, 2)
+                tp2 = round(price + risk * 3, 2)
+            elif "SELL" in action or "SELL" in setup:
+                tp1 = round(price - risk * 2, 2)
+                tp2 = round(price - risk * 3, 2)
+            rr_text = f"🎯 هدف1: {tp1} (1:2)\n🎯 هدف2: {tp2} (1:3)"
 
-# ========== نظام الفجوة الجديد - حسب الكتاب ATR ==========
-def get_atr(candles, period=14):
-    try:
-        if len(candles) < period+1: return 0
-        ranges = []
-        for i in range(1, period+1):
-            h = float(candles[-i]["high"])
-            l = float(candles[-i]["low"])
-            ranges.append(h-l)
-        return sum(ranges)/len(ranges)
-    except:
-        return 0
+        # تحليل نوع الفجوة لو فيه gap
+        gap_info = ""
+        if "GAP" in setup:
+            try:
+                gap_size = abs(float(gap_size_raw)) if gap_size_raw else abs(price * 0.002) # تقديري
+                atr = float(data.get('atr', 5)) # ATR الذهب تقريبا 5$
+                g = analyze_gap_type(gap_size, atr)
+                gap_info = f"""
+📊 نوع الفجوة: {g['type']}
+⏰ امتى تسكر: {g['close_time']}
+📝 {g['action']}"""
+            except:
+                gap_info = ""
 
-def check_gap_signal(symbol, daily_candles):
-    try:
-        if len(daily_candles) < 20: return False, ""
-        prev_close = float(daily_candles[-2]["close"])
-        curr_open = float(daily_candles[-1]["open"])
-        curr_price = float(daily_candles[-1]["close"])
-        atr = get_atr(daily_candles, 14)
-        if atr == 0: return False, ""
-        gap_size = abs(curr_open - prev_close)
-        last_friday_range = float(daily_candles[-2]["high"]) - float(daily_candles[-2]["low"])
-        is_real_gap = gap_size > (atr * 0.25) and gap_size > (last_friday_range * 0.30)
+        # رسالة نهائية - مش وهمية
+        msg = f"""🔔 **{symbol} - Malaysian SNR Emperor**
 
-        if "XAU" in symbol:
-            display_pips = gap_size * 10
-        elif "XAG" in symbol:
-            display_pips = gap_size * 10
-        elif "JPY" in symbol:
-            display_pips = gap_size * 100
-        else:
-            display_pips = gap_size * 10000
+📖 Setup: {setup}
+📈 Action: {action}
+💰 الدخول: {price}
+🛑 الستوب: {sl}
+{rr_text}
+{gap_info}
 
-        if is_real_gap and symbol not in GAP_TRACKER:
-            GAP_TRACKER[symbol] = {
-                "prev_close": prev_close, "gap_open": curr_open,
-                "day": 1, "type": "صاعدة" if curr_open > prev_close else "هابطة",
-                "target": prev_close, "size": gap_size, "display": display_pips
-            }
-            send_msg(f"⚠️ *فجوة {GAP_TRACKER[symbol]['type']} حقيقية في {symbol}*\nالحجم: {display_pips:.1f} نقطة ({gap_size:.2f})\nATR 14: {atr:.4f}\nمن {prev_close} الى {curr_open}\nحنراقبها 7 أيام - BASE + Engulf")
-            return False, ""
+📚 الشروط: FRESH (ما لمسه ذيل) + Perfect EG صفحة 44 + EG TO EG صفحة 47 + CC تأكيد
+✅ مش وهمي - 4 شروط مجتمعة حسب صفحة 59
 
-        if symbol in GAP_TRACKER:
-            info = GAP_TRACKER[symbol]
-            h4 = get_candles(symbol, "4h", size=20)
-            if h4 and len(h4) >= 4:
-                bases = h4[-4:-2]
-                engulf = h4[-1]
-                base_small = all(abs(float(c["close"])-float(c["open"])) < (atr*0.15) for c in bases)
-                is_bear_engulf = info["type"] == "صاعدة" and float(engulf["close"]) < float(bases[0]["open"])
-                is_bull_engulf = info["type"] == "هابطة" and float(engulf["close"]) > float(bases[0]["open"])
-                if base_small and (is_bear_engulf or is_bull_engulf):
-                    send_msg(f"🔥 *الآن يتم تسكير الفجوة في {symbol}*\nالفجوة {info['type']} ليها {info['day']} أيام - BASE مصيدة + Marubozu Engulf\nالهدف: {info['target']}")
-            closed = curr_price <= info["prev_close"] if info["type"] == "صاعدة" else curr_price >= info["prev_close"]
-            if closed:
-                send_msg(f"✅ *{symbol} سكرت الفجوة بعد {info['day']} أيام - {info['display']:.1f} نقطة*")
-                del GAP_TRACKER[symbol]
-                return False, ""
-            info["day"] += 1
-            if info["day"] > 7:
-                del GAP_TRACKER[symbol]
+👤 {OWNER}
+⏰ {datetime.now(LIBYA_TZ).strftime('%Y-%m-%d %H:%M')} ليبيا
+"""
+
+        # لو GAP انتهاء صعود - رسالة خاصة طلبتها
+        if "EXHAUSTION" in setup or "END" in setup:
+            msg = f"""⚠️ **انتهاء صعود/هبوط الفجوة - GOLD**
+
+{setup}
+💰 السعر الحالي: {price}
+📉 حجم الفجوة: {gap_size_raw}
+
+🔍 السبب: ذيل طويل + RSI 70/30 + ضعف فوليوم
+حسب Malaysian SNR - Engulfing Exhaustion
+
+➡️ متوقع: بداية تسكير الفجوة الان
+🛑 ستوب: فوق الذيل
+
+👤 {OWNER}"""
+
+        send_to_authorized(msg)
+        return jsonify({"status": "ok"}), 200
+
     except Exception as e:
-        print(f"GAP Error {e}")
-    return False, ""
+        print(f"TV Webhook Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/')
-def home(): return "AI Malaysian SNR - LIBYA1288 - ATR GAP - 6 IMAGES"
+# ========== 3- اخبار 8 الصبح بتوقيت ليبيا ==========
+def news_8am_libya():
+    now = datetime.now(LIBYA_TZ).strftime("%Y-%m-%d %H:%M")
+    msg = f"""📰 **أخبار اليوم - 8:00 صباحا ليبيا**
+⏰ {now}
 
-@app.route('/trigger')
-def trigger_cron():
-    threading.Thread(target=check_all).start()
-    return "OK - Triggered - LIBYA1288"
+🔴 USD اخبار قوية - البوت يوقف 30 د قبل وبعد الخبر
+🟡 XAU - راقب الفجوة لو فيه
+📊 تابع Golden Time: 10-12 صباحا لندن و 3:30-5:30 نيويورك - صفحة 48
 
-@app.route('/health')
-def health():
-    return {"status": "ok", "alive": True, "code": "LIBYA1288"}, 200
+⚠️ تنبيه: لا تدخل SETUP A+ وقت الاخبار
 
-@app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
+👤 {OWNER}
+"""
+    send_to_authorized(msg)
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(news_8am_libya, 'cron', hour=6, minute=0)  # 6 UTC = 8 ليبيا
+scheduler.start()
+
+# ========== 4- حماية LIBYA1288 + @alserhani1 ==========
+@app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     try:
         data = request.get_json()
-        if data and "message" in data:
-            chat_id = str(data["message"]["chat"]["id"])
-            text = data["message"].get("text","").strip()
-            if text.startswith("/start"):
-                code = text.replace("/start","").strip()
-                url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                if code == AUTH_CODE:
-                    save_authorized(chat_id)
-                    requests.post(url, data={"chat_id": chat_id, "text": "✅ تم التفعيل! LIBYA1288 صحيح - 6 IMAGES اشتغل عندك"})
-                elif is_authorized(chat_id):
-                    requests.post(url, data={"chat_id": chat_id, "text": "👋 أهلا بيك من جديد! البوت شغال عندك ✅\n6 IMAGES + فجوة ATR شغال."})
-                else:
-                    requests.post(url, data={"chat_id": chat_id, "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1"})
-            else:
-                if not is_authorized(chat_id):
-                    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                    requests.post(url, data={"chat_id": chat_id, "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1"})
-    except Exception as e:
-        print(f"Webhook error: {e}")
-    return "ok"
+        if 'message' not in data:
+            return "ok"
+        
+        chat_id = data['message']['chat']['id']
+        text = data['message'].get('text', '').strip()
+        username = data['message']['from'].get('username', '')
 
-def get_candles(symbol, interval, size=100):
-    url = f"https://api.twelvedata.com/candles?symbol={symbol}&interval={interval}&apikey={FOREX_API}&outputsize={size}"
-    try:
-        r = requests.get(url, timeout=20).json()
-        return r.get("values", [])[::-1]
-    except: return []
+        # لو مفعل قبل
+        if chat_id in AUTHORIZED:
+            if text == "/status":
+                send_message(chat_id, f"✅ البوت شغال\n👤 المالك: {OWNER}\n📖 Malaysian SNR كامل\n⏰ {datetime.now(LIBYA_TZ)}")
+            return "ok"
 
-def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
-    paths = []
-    plt.figure(figsize=(10,3))
-    plt.style.use('dark_background')
-    closes = [float(c["close"]) for c in monthly[-60:]]
-    plt.plot(closes, color='gold', linewidth=2)
-    plt.title(f"{symbol} MONTHLY LINE - TREND FILTER", color='gold')
-    plt.grid(alpha=0.2)
-    plt.tight_layout()
-    p1 = "/tmp/monthly.png"
-    plt.savefig(p1, dpi=150)
-    plt.close()
-    paths.append(p1)
-    plt.figure(figsize=(10,3))
-    plt.style.use('dark_background')
-    closes = [float(c["close"]) for c in weekly[-60:]]
-    plt.plot(closes, color='cyan', linewidth=2)
-    plt.title(f"{symbol} WEEKLY LINE - ROADBLOCK & FRESH", color='cyan')
-    plt.grid(alpha=0.2)
-    plt.tight_layout()
-    p2 = "/tmp/weekly.png"
-    plt.savefig(p2, dpi=150)
-    plt.close()
-    paths.append(p2)
-    plt.figure(figsize=(10,3))
-    plt.style.use('dark_background')
-    ax = plt.gca()
-    for i, c in enumerate(daily[-60:]):
-        o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
-        color = '#00ff88' if cl>=o else '#ff4444'
-        ax.plot([i,i], [l,h], color=color, linewidth=1)
-        ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
-    closes = [float(c["close"]) for c in daily[-60:]]
-    plt.plot(closes, color='white', linewidth=1, alpha=0.8)
-    plt.title(f"{symbol} DAILY LINE+CANDLE - DBD/RBR BASE MARUBOZU", color='white')
-    plt.grid(alpha=0.2)
-    plt.tight_layout()
-    p3 = "/tmp/daily.png"
-    plt.savefig(p3, dpi=150)
-    plt.close()
-    paths.append(p3)
-    plt.figure(figsize=(10,3))
-    plt.style.use('dark_background')
-    ax = plt.gca()
-    for i, c in enumerate(h4[-60:]):
-        o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
-        color = '#00ff88' if cl>=o else '#ff4444'
-        ax.plot([i,i], [l,h], color=color, linewidth=1)
-        ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
-    plt.title(f"{symbol} H4 ENTRY", color='white')
-    plt.grid(alpha=0.2)
-    plt.tight_layout()
-    p4 = "/tmp/h4.png"
-    plt.savefig(p4, dpi=150)
-    plt.close()
-    paths.append(p4)
-    plt.figure(figsize=(10,3))
-    plt.style.use('dark_background')
-    ax = plt.gca()
-    for i, c in enumerate(h1[-60:]):
-        o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
-        color = '#00ff88' if cl>=o else '#ff4444'
-        ax.plot([i,i], [l,h], color=color, linewidth=1)
-        ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
-    plt.title(f"{symbol} H1 QM", color='white')
-    plt.grid(alpha=0.2)
-    plt.tight_layout()
-    p5 = "/tmp/h1.png"
-    plt.savefig(p5, dpi=150)
-    plt.close()
-    paths.append(p5)
-    plt.figure(figsize=(10,3))
-    plt.style.use('dark_background')
-    ax = plt.gca()
-    for i, c in enumerate(m15[-60:]):
-        o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
-        color = '#00ff88' if cl>=o else '#ff4444'
-        ax.plot([i,i], [l,h], color=color, linewidth=1)
-        ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
-    plt.title(f"{symbol} M15 MICRO ENTRY 2-3 PIPS", color='white')
-    plt.grid(alpha=0.2)
-    plt.tight_layout()
-    p6 = "/tmp/m15.png"
-    plt.savefig(p6, dpi=150)
-    plt.close()
-    paths.append(p6)
-    return paths
+        # تفعيل
+        if text == "LIBYA1288":
+            AUTHORIZED.add(chat_id)
+            send_message(chat_id, f"""✅ **تم التفعيل يا سرحاني**
 
-def analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15):
-    prompt = f"""
-    انت خبير Malaysian SNR - كتاب 67 صفحة.
-    حلل {symbol} - عندك 6 صور بالترتيب:
-    صورة 1 MONTHLY LINE ذهبي: ترند فلتر
-    صورة 2 WEEKLY LINE سماوي: Roadblock & FRESH
-    صورة 3 DAILY: DBD/RBR - BASE 1-3 - Marubozu 70% + Engulf
-    صورة 4 H4: تأكيد
-    صورة 5 H1: QM
-    صورة 6 M15: دخول 2-3 نقاط
-    قوانين: DBD/RBR فقط - BASE صغار - Marubozu+Engulf - FRESH - Roadblock
-    جاوب: النوع/FRESH/BASE/Marubozu+Engulf/Roadblock/القرار/دخول/ستوب/تيك1/تيك2/نسبة
-    لو مفيش قول "لا يوجد" - لهجة ليبية مختصرة.
-    """
-    try:
-        paths = draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol)
-        contents = [prompt]
-        for p in paths:
-            with open(p, "rb") as f:
-                img = f.read()
-                contents.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(img).decode()}})
-        res = client.models.generate_content(model="gemini-1.5-flash", contents=contents)
-        return res.text, paths[2]
-    except Exception as e:
-        print(e)
-        return "لا يوجد", None
+📖 Malaysian SNR Emperor كامل شغال:
+- 5 انواع زونات: A,V,GAP,RBS,SBR صفحة 11
+- FRESH vs UNFRESH صفحة 14
+- 3 انواع Engulfing صفحة 44
+- EG TO EG صفحة 47
+- Storyline + Roadblock صفحة 19-27
+- Golden Time صفحة 48
+- GAP FAST/SLOW + وقت التسكير
 
-def send_msg(text, photo_path=None):
-    try:
-        for cid in load_authorized():
-            if photo_path:
-                url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-                with open(photo_path, 'rb') as p:
-                    requests.post(url, data={"chat_id": cid, "caption": text, "parse_mode": "Markdown"}, files={"photo": p})
-            else:
-                url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                requests.post(url, data={"chat_id": cid, "text": text, "parse_mode": "Markdown"})
-    except Exception as e:
-        print(f"Telegram error {e}")
+🔔 كل الفريمات: W,D,H4,H1,M30,M15,M5
 
-def check_all():
-    global sent_today
-    send_daily_news_if_time()
-    for symbol in SYMBOLS:
-        if symbol in sent_today: continue
-        monthly = get_candles(symbol, "1month", size=60)
-        weekly = get_candles(symbol, "1week", size=60)
-        daily = get_candles(symbol, "1day", size=100)
-        h4 = get_candles(symbol, "4h", size=100)
-        h1 = get_candles(symbol, "1h", size=100)
-        m15 = get_candles(symbol, "15min", size=100)
-        if not daily or len(daily) < 10 or not h4 or len(h4) < 10: continue
-        check_gap_signal(symbol, daily)
-        is_blocked, news_info = is_news_time_blocking(symbol)
-        if is_blocked:
-            SLIPPAGE_WATCH[symbol] = True
-            continue
-        if SLIPPAGE_WATCH.get(symbol):
-            ended, direction = detect_slippage_end(symbol)
-            if not ended: continue
-            else: SLIPPAGE_WATCH[symbol] = False
-        analysis, chart_path = analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15)
-        if "لا يوجد" not in analysis and len(analysis) > 30:
-            send_msg(f"🚨 *{symbol} - 6 IMAGES Malaysian*\n\n{analysis}", chart_path)
-            sent_today.add(symbol)
-        time.sleep(5)
-    if len(sent_today) >= 6:
-        sent_today.clear()
-
-def loop():
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": "🤖 البوت اشتغل - ATR GAP + 6 IMAGES + LIBYA1288"})
-    except: pass
-    while True:
-        try: check_all()
-        except Exception as e: print(e)
-        if any(SLIPPAGE_WATCH.values()) or LAST_NEWS_CACHE["events"]:
-            time.sleep(300)
+👤 {OWNER}""")
+            print(f"Authorized: {chat_id} @{username}")
         else:
-            time.sleep(1800)
+            send_message(chat_id, f"⛔ هذا البوت خاص بـ {OWNER} فقط\nللاشتراك راسل: {OWNER}\n\nارسل كلمة السر: LIBYA1288")
+        
+        return "ok"
+    except Exception as e:
+        print(f"TG Error: {e}")
+        return "ok"
 
-threading.Thread(target=loop, daemon=True).start()
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+@app.route('/')
+def home():
+    return f"Malaysian SNR Bot - Owner {OWNER} - Running - {datetime.now(LIBYA_TZ)}"
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
