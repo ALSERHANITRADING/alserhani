@@ -160,7 +160,7 @@ def check_gap_signal(symbol, daily_candles):
     return False, ""
 
 @app.route('/')
-def home(): return "AI Malaysian SNR - LIBYA1288 - 6 FLASH - GAP 7DAYS"
+def home(): return "AI Malaysian SNR - LIBYA1288 - 6 FLASH - GAP 7DAYS - 6 IMAGES"
 
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
@@ -189,39 +189,140 @@ def get_candles(symbol, interval, size=100):
         return r.get("values", [])[::-1]
     except: return []
 
-def draw_candles(daily, h4, symbol):
-    fig, (ax1, ax2) = plt.subplots(2,1, figsize=(10,6))
-    for ax, data, title in [(ax1, daily[-50:], f"{symbol} DAILY"), (ax2, h4[-50:], f"{symbol} H4")]:
-        for i, c in enumerate(data):
-            o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
-            color = 'green' if cl>=o else 'red'
-            ax.plot([i,i], [l,h], color=color, linewidth=1)
-            ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
-        ax.set_title(title)
+# ========== التعديل الجديد - 6 صور منفصلة ==========
+def draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol):
+    paths = []
+    # 1- MONTHLY LINE
+    plt.figure(figsize=(10,3))
+    plt.style.use('dark_background')
+    closes = [float(c["close"]) for c in monthly[-60:]]
+    plt.plot(closes, color='gold', linewidth=2)
+    plt.title(f"{symbol} MONTHLY LINE - TREND FILTER", color='gold')
+    plt.grid(alpha=0.2)
     plt.tight_layout()
-    plt.savefig("/tmp/chart.png", dpi=150)
+    p1 = "/tmp/monthly.png"
+    plt.savefig(p1, dpi=150)
     plt.close()
+    paths.append(p1)
 
-def analyze_ai(symbol):
+    # 2- WEEKLY LINE
+    plt.figure(figsize=(10,3))
+    plt.style.use('dark_background')
+    closes = [float(c["close"]) for c in weekly[-60:]]
+    plt.plot(closes, color='cyan', linewidth=2)
+    plt.title(f"{symbol} WEEKLY LINE - ROADBLOCK & FRESH", color='cyan')
+    plt.grid(alpha=0.2)
+    plt.tight_layout()
+    p2 = "/tmp/weekly.png"
+    plt.savefig(p2, dpi=150)
+    plt.close()
+    paths.append(p2)
+
+    # 3- DAILY LINE+CANDLE
+    plt.figure(figsize=(10,3))
+    plt.style.use('dark_background')
+    ax = plt.gca()
+    for i, c in enumerate(daily[-60:]):
+        o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
+        color = '#00ff88' if cl>=o else '#ff4444'
+        ax.plot([i,i], [l,h], color=color, linewidth=1)
+        ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
+    closes = [float(c["close"]) for c in daily[-60:]]
+    plt.plot(closes, color='white', linewidth=1, alpha=0.8)
+    plt.title(f"{symbol} DAILY LINE+CANDLE - DBD/RBR BASE MARUBOZU", color='white')
+    plt.grid(alpha=0.2)
+    plt.tight_layout()
+    p3 = "/tmp/daily.png"
+    plt.savefig(p3, dpi=150)
+    plt.close()
+    paths.append(p3)
+
+    # 4- H4
+    plt.figure(figsize=(10,3))
+    plt.style.use('dark_background')
+    ax = plt.gca()
+    for i, c in enumerate(h4[-60:]):
+        o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
+        color = '#00ff88' if cl>=o else '#ff4444'
+        ax.plot([i,i], [l,h], color=color, linewidth=1)
+        ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
+    plt.title(f"{symbol} H4 ENTRY", color='white')
+    plt.grid(alpha=0.2)
+    plt.tight_layout()
+    p4 = "/tmp/h4.png"
+    plt.savefig(p4, dpi=150)
+    plt.close()
+    paths.append(p4)
+
+    # 5- H1 QM
+    plt.figure(figsize=(10,3))
+    plt.style.use('dark_background')
+    ax = plt.gca()
+    for i, c in enumerate(h1[-60:]):
+        o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
+        color = '#00ff88' if cl>=o else '#ff4444'
+        ax.plot([i,i], [l,h], color=color, linewidth=1)
+        ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
+    plt.title(f"{symbol} H1 QM", color='white')
+    plt.grid(alpha=0.2)
+    plt.tight_layout()
+    p5 = "/tmp/h1.png"
+    plt.savefig(p5, dpi=150)
+    plt.close()
+    paths.append(p5)
+
+    # 6- M15 MICRO
+    plt.figure(figsize=(10,3))
+    plt.style.use('dark_background')
+    ax = plt.gca()
+    for i, c in enumerate(m15[-60:]):
+        o,h,l,cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
+        color = '#00ff88' if cl>=o else '#ff4444'
+        ax.plot([i,i], [l,h], color=color, linewidth=1)
+        ax.add_patch(mpatches.Rectangle((i-0.3, min(o,cl)), 0.6, abs(cl-o), color=color))
+    plt.title(f"{symbol} M15 MICRO ENTRY 2-3 PIPS", color='white')
+    plt.grid(alpha=0.2)
+    plt.tight_layout()
+    p6 = "/tmp/m15.png"
+    plt.savefig(p6, dpi=150)
+    plt.close()
+    paths.append(p6)
+
+    return paths
+
+def analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15):
     prompt = f"""
-    انت خبير Malaysian SNR - كتاب 67 صفحة - التزم بالقوانين حرفيا.
-    حلل {symbol} - الصورة فوق DAILY وتحت H4
-    قوانين: DBD/RBR فقط - BASE 1-3 شمعات صغار - Marubozu 70% + Engulf - FRESH - Roadblock
+    انت خبير Malaysian SNR - كتاب 67 صفحة.
+    حلل {symbol} - عندك 6 صور بالترتيب:
+
+    صورة 1 MONTHLY LINE ذهبي: ترند فلتر - شن اتجاه 10 سنين؟
+    صورة 2 WEEKLY LINE سماوي: هل فيه Roadblock قدام السعر؟ وهل المنطقة FRESH؟
+    صورة 3 DAILY LINE+CANDLE: دور DBD/RBR - BASE 1-3 شمعات صغار - Marubozu 70% + Engulf - FRESH؟
+    صورة 4 H4: تأكيد الدخول - التيك1
+    صورة 5 H1: شكل QM
+    صورة 6 M15: دخول جراحي 2-3 نقاط
+
+    قوانين: DBD/RBR فقط - BASE صغار - Marubozu+Engulf - FRESH - Roadblock
     ستوب 10-15 فوق BASE - دخول 2-3 نقاط - تيك1 H4 تيك2 QM
     جاوب: النوع/FRESH/BASE/Marubozu+Engulf/Roadblock/القرار/دخول/ستوب/تيك1/تيك2/نسبة
     لو مفيش قول "لا يوجد" - لهجة ليبية مختصرة.
     """
     try:
-        with open("/tmp/chart.png", "rb") as f:
-            img = f.read()
+        paths = draw_6_charts(monthly, weekly, daily, h4, h1, m15, symbol)
+        contents = [prompt]
+        for p in paths:
+            with open(p, "rb") as f:
+                img = f.read()
+                contents.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(img).decode()}})
+
         res = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=[prompt, {"inline_data": {"mime_type": "image/png", "data": base64.b64encode(img).decode()}}]
+            contents=contents
         )
-        return res.text
+        return res.text, paths[2] # نرجع تحليل + صورة الديلي للتيليجرام
     except Exception as e:
         print(e)
-        return "لا يوجد"
+        return "لا يوجد", None
 
 def send_msg(text, photo_path=None):
     try:
@@ -241,8 +342,13 @@ def check_all():
     send_daily_news_if_time()
     for symbol in SYMBOLS:
         if symbol in sent_today: continue
-        daily = get_candles(symbol, "1day")
-        h4 = get_candles(symbol, "4h")
+        # جلب 6 فريمات
+        monthly = get_candles(symbol, "1month", size=60)
+        weekly = get_candles(symbol, "1week", size=60)
+        daily = get_candles(symbol, "1day", size=100)
+        h4 = get_candles(symbol, "4h", size=100)
+        h1 = get_candles(symbol, "1h", size=100)
+        m15 = get_candles(symbol, "15min", size=100)
         if not daily or not h4: continue
         check_gap_signal(symbol, daily)
         is_blocked, news_info = is_news_time_blocking(symbol)
@@ -253,10 +359,10 @@ def check_all():
             ended, direction = detect_slippage_end(symbol)
             if not ended: continue
             else: SLIPPAGE_WATCH[symbol] = False
-        draw_candles(daily, h4, symbol)
-        analysis = analyze_ai(symbol)
+
+        analysis, chart_path = analyze_ai(symbol, monthly, weekly, daily, h4, h1, m15)
         if "لا يوجد" not in analysis and len(analysis) > 30:
-            send_msg(f"🚨 *{symbol} - 6 FLASH Malaysian*\n\n{analysis}", "/tmp/chart.png")
+            send_msg(f"🚨 *{symbol} - 6 IMAGES Malaysian*\n\n{analysis}", chart_path)
             sent_today.add(symbol)
         time.sleep(5)
     if len(sent_today) >= 6:
@@ -265,7 +371,7 @@ def check_all():
 def loop():
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": "🤖 البوت اشتغل - 6 FLASH + فجوة 7 أيام + فلتر أخبار + انزلاق - LIBYA1288"})
+        requests.post(url, data={"chat_id": CHAT_ID, "text": "🤖 البوت اشتغل - 6 IMAGES + فجوة 7 أيام + فلتر أخبار + انزلاق - LIBYA1288"})
     except: pass
     while True:
         try: check_all()
