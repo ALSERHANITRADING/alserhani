@@ -162,6 +162,17 @@ def check_gap_signal(symbol, daily_candles):
 @app.route('/')
 def home(): return "AI Malaysian SNR - LIBYA1288 - 6 FLASH - GAP 7DAYS - 6 IMAGES"
 
+# ========== السكريبت الجديد - باش Cron ينوضه كل نص ساعة ==========
+@app.route('/trigger')
+def trigger_cron():
+    # هذا الرابط ينضرب من Cron Job كل 30 دقيقة
+    threading.Thread(target=check_all).start()
+    return "OK - Triggered every 30min - LIBYA1288"
+
+@app.route('/health')
+def health():
+    return "alive"
+
 # ========== الدالة المصححة - ترد على الحسابات الثانية ==========
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
