@@ -116,42 +116,74 @@ def detect_slippage_end(symbol):
     except:
         return False, None
 
+# ========== نظام الفجوة الجديد - حسب الكتاب ATR ==========
+def get_atr(candles, period=14):
+    try:
+        if len(candles) < period+1: return 0
+        ranges = []
+        for i in range(1, period+1):
+            h = float(candles[-i]["high"])
+            l = float(candles[-i]["low"])
+            ranges.append(h-l)
+        return sum(ranges)/len(ranges)
+    except:
+        return 0
+
 def check_gap_signal(symbol, daily_candles):
     try:
-        if len(daily_candles) < 3: return False, ""
+        if len(daily_candles) < 20: return False, ""
         prev_close = float(daily_candles[-2]["close"])
         curr_open = float(daily_candles[-1]["open"])
         curr_price = float(daily_candles[-1]["close"])
-        gap_pips = (curr_open - prev_close) * 10000
-        if "JPY" in symbol: gap_pips = (curr_open - prev_close) * 100
-        if abs(gap_pips) >= 10 and symbol not in GAP_TRACKER:
-            GAP_TRACKER[symbol] = {"prev_close": prev_close, "gap_open": curr_open, "day": 1, "type": "صاعدة" if gap_pips > 0 else "هابطة", "target": prev_close, "size": abs(gap_pips)}
-            send_msg(f"⚠️ *فجوة {GAP_TRACKER[symbol]['type']} في {symbol} - {abs(gap_pips):.1f} نقطة*\nمن {prev_close} الى {curr_open}\nحنراقبها 7 أيام وعلامة التسكير = BASE مصيدة + Engulf")
+        atr = get_atr(daily_candles, 14)
+        if atr == 0: return False, ""
+        gap_size = abs(curr_open - prev_close)
+        last_friday_range = float(daily_candles[-2]["high"]) - float(daily_candles[-2]["low"])
+        is_real_gap = gap_size > (atr * 0.25) and gap_size > (last_friday_range * 0.30)
+
+        if "XAU" in symbol:
+            display_pips = gap_size * 10
+        elif "XAG" in symbol:
+            display_pips = gap_size * 10
+        elif "JPY" in symbol:
+            display_pips = gap_size * 100
+        else:
+            display_pips = gap_size * 10000
+
+        if is_real_gap and symbol not in GAP_TRACKER:
+            GAP_TRACKER[symbol] = {
+                "prev_close": prev_close, "gap_open": curr_open,
+                "day": 1, "type": "صاعدة" if curr_open > prev_close else "هابطة",
+                "target": prev_close, "size": gap_size, "display": display_pips
+            }
+            send_msg(f"⚠️ *فجوة {GAP_TRACKER[symbol]['type']} حقيقية في {symbol}*\nالحجم: {display_pips:.1f} نقطة ({gap_size:.2f})\nATR 14: {atr:.4f}\nمن {prev_close} الى {curr_open}\nحنراقبها 7 أيام - BASE + Engulf")
             return False, ""
+
         if symbol in GAP_TRACKER:
             info = GAP_TRACKER[symbol]
             h4 = get_candles(symbol, "4h", size=20)
             if h4 and len(h4) >= 4:
                 bases = h4[-4:-2]
                 engulf = h4[-1]
-                base_small = all(abs(float(c["close"])-float(c["open"])) < 0.0005 for c in bases)
+                base_small = all(abs(float(c["close"])-float(c["open"])) < (atr*0.15) for c in bases)
                 is_bear_engulf = info["type"] == "صاعدة" and float(engulf["close"]) < float(bases[0]["open"])
                 is_bull_engulf = info["type"] == "هابطة" and float(engulf["close"]) > float(bases[0]["open"])
                 if base_small and (is_bear_engulf or is_bull_engulf):
-                    send_msg(f"🔥 *الآن يتم تسكير الفجوة في {symbol}*\nالفجوة {info['type']} ليها {info['day']} أيام - تكونت BASE مصيدة + Marubozu Engulf\nالهدف: {info['target']}")
+                    send_msg(f"🔥 *الآن يتم تسكير الفجوة في {symbol}*\nالفجوة {info['type']} ليها {info['day']} أيام - BASE مصيدة + Marubozu Engulf\nالهدف: {info['target']}")
             closed = curr_price <= info["prev_close"] if info["type"] == "صاعدة" else curr_price >= info["prev_close"]
             if closed:
-                send_msg(f"✅ *{symbol} سكرت الفجوة بعد {info['day']} أيام*")
+                send_msg(f"✅ *{symbol} سكرت الفجوة بعد {info['day']} أيام - {info['display']:.1f} نقطة*")
                 del GAP_TRACKER[symbol]
                 return False, ""
             info["day"] += 1
             if info["day"] > 7:
                 del GAP_TRACKER[symbol]
-    except: pass
+    except Exception as e:
+        print(f"GAP Error {e}")
     return False, ""
 
 @app.route('/')
-def home(): return "AI Malaysian SNR - LIBYA1288 - 6 FLASH - GAP 7DAYS - 6 IMAGES"
+def home(): return "AI Malaysian SNR - LIBYA1288 - ATR GAP - 6 IMAGES"
 
 @app.route('/trigger')
 def trigger_cron():
@@ -160,7 +192,7 @@ def trigger_cron():
 
 @app.route('/health')
 def health():
-    return {"status": "ok", "alive": True}, 200
+    return {"status": "ok", "alive": True, "code": "LIBYA1288"}, 200
 
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def telegram_webhook():
@@ -176,7 +208,7 @@ def telegram_webhook():
                     save_authorized(chat_id)
                     requests.post(url, data={"chat_id": chat_id, "text": "✅ تم التفعيل! LIBYA1288 صحيح - 6 IMAGES اشتغل عندك"})
                 elif is_authorized(chat_id):
-                    requests.post(url, data={"chat_id": chat_id, "text": "👋 أهلا بيك من جديد! البوت شغال عندك ✅\n6 IMAGES + فجوة 7 أيام شغال."})
+                    requests.post(url, data={"chat_id": chat_id, "text": "👋 أهلا بيك من جديد! البوت شغال عندك ✅\n6 IMAGES + فجوة ATR شغال."})
                 else:
                     requests.post(url, data={"chat_id": chat_id, "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1"})
             else:
@@ -354,7 +386,7 @@ def check_all():
 def loop():
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": "🤖 البوت اشتغل - 6 IMAGES + فجوة 7 أيام + فلتر أخبار + انزلاق - LIBYA1288"})
+        requests.post(url, data={"chat_id": CHAT_ID, "text": "🤖 البوت اشتغل - ATR GAP + 6 IMAGES + LIBYA1288"})
     except: pass
     while True:
         try: check_all()
