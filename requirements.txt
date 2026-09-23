@@ -1,6 +1,5 @@
 Flask
 requests
-matplotlib
-google-genai
-Pillow
-python-dotenv
+pytz
+apscheduler
+gunicorn
