@@ -174,17 +174,17 @@ def telegram_webhook():
 
             if text.startswith("/start"):
                 code = text.replace("/start","").strip()
+                url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
                 if code == AUTH_CODE:
                     save_authorized(chat_id)
-                    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
                     requests.post(url, data={"chat_id": chat_id, "text": "✅ تم التفعيل! LIBYA1288 صحيح - 6 IMAGES اشتغل عندك"})
+                elif is_authorized(chat_id):
+                    requests.post(url, data={"chat_id": chat_id, "text": "👋 أهلا بيك من جديد! البوت شغال عندك ✅\n6 IMAGES + فجوة 7 أيام شغال."})
                 else:
-                    if not is_authorized(chat_id):
-                        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                        requests.post(url, data={
-                            "chat_id": chat_id,
-                            "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1\n\nBot is private for ALSERHANI team."
-                        })
+                    requests.post(url, data={
+                        "chat_id": chat_id,
+                        "text": "🔒 هذا البوت مخصص لـ ALSERHANI_TRADING\n\nهذا البوت خاص ويعمل برمز تفعيل خاص.\nللاشتراك تواصل مع @alserhani1\n\nBot is private for ALSERHANI team."
+                    })
             else:
                 if not is_authorized(chat_id):
                     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
