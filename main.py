@@ -191,7 +191,8 @@ def telegram_webhook():
 👤 {OWNER}""")
             print(f"Authorized: {chat_id} @{username}")
         else:
-            send_message(chat_id, f"⛔ هذا البوت خاص بـ {OWNER} فقط\nللاشتراك راسل: {OWNER}\n\nارسل كلمة السر: LIBYA1288")
+            # تم اخفاء كلمة السر من الرسالة - تعديل وحيد
+            send_message(chat_id, f"⛔ هذا البوت خاص بـ {OWNER} فقط\nللاشتراك راسل: {OWNER}\n\nارسل كلمة السر:")
         
         return "ok"
     except Exception as e:
